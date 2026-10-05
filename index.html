@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мини Видеоредактор</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #ef4444;
+            --text: #f8fafc;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        h1 { margin-top: 0; font-size: 24px; text-align: center; }
+        .player-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .subtitle-overlay {
+            position: absolute;
+            bottom: 20px;
+            width: 80%;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: 500;
+            pointer-events: none;
+            display: none;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+        }
+        button, label.btn {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.2s;
+            display: inline-block;
+        }
+        button:hover, label.btn:hover { background-color: var(--accent-hover); }
+        button.recording { background-color: var(--danger); animation: pulse 1.5s infinite; }
+        input[type="file"] { display: none; }
+        .timeline-section {
+            margin-top: 20px;
+            border-top: 1px solid #334155;
+            padding-top: 15px;
+        }
+        .sub-input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        input[type="text"], input[type="number"] {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            flex-grow: 1;
+        }
+        .sub-list {
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .sub-item {
+            background: #0f172a;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎬 Web Video Editor</h1>
+    
+    <!-- Превью видео и субтитров -->
+    <div class="player-container">
+        <video id="videoPlayer" controls></video>
+        <div id="subtitleDisplay" class="subtitle-overlay"></div>
+    </div>
+
+    <!-- Панель управления -->
+    <div class="controls">
+        <label class="btn">
+            📁 Загрузить видео
+            <input type="file" id="videoUpload" accept="video/*">
+        </label>
+        <button id="recBtn">🎙️ Запись голоса</button>
+        <button id="exportBtn" style="background-color: #10b981;">✅ Видео готово</button>
+    </div>
+
+    <!-- Редактор субтитров -->
+    <div class="timeline-section">
+        <h3>💬 Добавить субтитры</h3>
+        <div class="sub-input-group">
+            <input type="text" id="subText" placeholder="Текст субтитра...">
+            <input type="number" id="subStart" placeholder="Старт (сек)" style="max-width: 100px;" step="0.1" min="0">
+            <input type="number" id="subEnd" placeholder="Конец (сек)" style="max-width: 100px;" step="0.1" min="0">
+            <button id="addSubBtn">Добавить</button>
+        </div>
+        <div class="sub-list" id="subList"></div>
+    </div>
+</div>
+
+<script>
+    const videoUpload = document.getElementById('videoUpload');
+    const videoPlayer = document.getElementById('videoPlayer');
+    const subtitleDisplay = document.getElementById('subtitleDisplay');
+    const recBtn = document.getElementById('recBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    
+    const subText = document.getElementById('subText');
+    const subStart = document.getElementById('subStart');
+    const subEnd = document.getElementById('subEnd');
+    const addSubBtn = document.getElementById('addSubBtn');
+    const subList = document.getElementById('subList');
+
+    let subtitles = [];
+    let mediaRecorder;
+    let audioChunks = [];
+    let recordedAudioBlob = null;
+    let isRecording = false;
+
+    // Загрузка видео
+    videoUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            videoPlayer.src = url;
+        }
+    });
+
+    // Синхронизация субтитров с таймлайном видео
+    videoPlayer.addEventListener('timeupdate', () => {
+        const currentTime = videoPlayer.currentTime;
+        const currentSub = subtitles.find(sub => currentTime >= sub.start && currentTime <= sub.end);
+        
+        if (currentSub) {
+            subtitleDisplay.innerText = currentSub.text;
+            subtitleDisplay.style.display = 'block';
+        } else {
+            subtitleDisplay.style.display = 'none';
+        }
+    });
+
+    // Добавление субтитра
+    addSubBtn.addEventListener('click', () => {
+        const text = subText.value.trim();
+        const start = parseFloat(subStart.value);
+        const end = parseFloat(subEnd.value);
+
+        if (text && !isNaN(start) && !isNaN(end) && start < end) {
+            subtitles.push({ text, start, end });
+            renderSubtitlesList();
+            subText.value = '';
+            subStart.value = '';
+            subEnd.value = '';
+        } else {
+            alert('Проверьте правильность данных субтитра (старт должен быть меньше конца).');
+        }
+    });
+
+    function renderSubtitlesList() {
+        subList.innerHTML = '';
+        subtitles.forEach((sub, index) => {
+            const item = document.createElement('div');
+            item.className = 'sub-item';
+            item.innerHTML = `<span>[${sub.start}с - ${sub.end}с]: ${sub.text}</span>`;
+            subList.appendChild(item);
+        });
+    }
+
+    // Запись голоса через микрофон
+    recBtn.addEventListener('click', async () => {
+        if (!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(recordedAudioBlob);
+                    // Можно использовать записанное аудио
+                    console.log('Аудио записано:', audioUrl);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                recBtn.textContent = '⏹️ Стоп запись';
+                recBtn.classList.add('recording');
+                videoPlayer.play(); // Запускаем видео параллельно с записью
+            } catch (err) {
+                alert('Не удалось получить доступ к микрофону.');
+                console.error(err);
+            }
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+            recBtn.textContent = '🎙️ Запись голоса';
+            recBtn.classList.remove('recording');
+            videoPlayer.pause();
+        }
+    });
+
+    // Кнопка "Видео готово" (Экспорт/Рендер)
+    exportBtn.addEventListener('click', () => {
+        if (!videoPlayer.src) {
+            alert('Сначала загрузите видео!');
+            return;
+        }
+
+        alert('Сборка видео началась! В реальном проекте здесь запускается рендеринг через Canvas/FFmpeg, а сейчас мы сохраняем текущий проект и записанную озвучку.');
+        
+        // Пример создания ссылки на скачивание записанного аудиодороги
+        if (recordedAudioBlob) {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(recordedAudioBlob);
+            a.download = 'voiceover.webm';
+            a.click();
+        }
+    });
+</script>
+
+</body>
+</html>
