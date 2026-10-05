@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visionary Reels Direct Download</title>
+    <style>
+        :root {
+            --bg: #09090b;
+            --card: #18181b;
+            --accent: #8b5cf6;
+            --danger: #ef4444;
+            --text: #f4f4f5;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: var(--card);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+        }
+        h1 { margin-top: 0; font-size: 20px; text-align: center; color: #a78bfa; }
+        
+        .player-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 9/16;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .subtitle-overlay {
+            position: absolute;
+            bottom: 25%;
+            width: 85%;
+            text-align: center;
+            color: #fff;
+            font-size: 26px;
+            font-weight: 900;
+            text-transform: uppercase;
+            font-family: Impact, sans-serif;
+            text-shadow: 
+                -2px -2px 0 #000, 
+                 2px -2px 0 #000, 
+                -2px  2px 0 #000, 
+                 2px  2px 0 #000,
+                 0 4px 12px rgba(0,0,0,0.9);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #7c3aed; }
+        button.recording { background-color: var(--danger); animation: pulse 1.2s infinite; }
+
+        .status-text {
+            text-align: center;
+            font-size: 13px;
+            color: #a1a1aa;
+            margin-top: 8px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>⚡ Visionary Reels</h1>
+    
+    <div class="player-container">
+        <canvas id="bgCanvas"></canvas>
+        <div id="subtitleDisplay" class="subtitle-overlay">Нажми старт и говори текст...</div>
+    </div>
+
+    <div class="controls">
+        <button id="recBtn">🎙️ Старт записи</button>
+    </div>
+    <div class="status-text" id="statusText">Готово к записи</div>
+</div>
+
+<script>
+    const canvas = document.getElementById('bgCanvas');
+    const ctx = canvas.getContext('2d');
+    const subtitleDisplay = document.getElementById('subtitleDisplay');
+    const recBtn = document.getElementById('statusText') ? document.getElementById('recBtn') : document.getElementById('recBtn');
+    const statusText = document.getElementById('statusText');
+
+    canvas.width = 720;
+    canvas.height = 1280;
+
+    let hue = 0;
+    function drawBackground() {
+        hue += 0.5;
+        const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        grad.addColorStop(0, `hsl(${hue % 360}, 90%, 15%)`);
+        grad.addColorStop(1, `hsl(${(hue + 80) % 360}, 80%, 5%)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let i = 0; i < 3; i++) {
+            let x = canvas.width / 2 + Math.sin(hue / 40 + i) * 150;
+            let y = canvas.height / 2 + Math.cos(hue / 50 + i) * 250;
+            let rad = 200;
+            let r = ctx.createRadialGradient(x, y, 0, x, y, rad);
+            r.addColorStop(0, `hsla(${(hue + i * 60) % 360}, 100%, 50%, 0.25)`);
+            r.addColorStop(1, 'transparent');
+            ctx.fillStyle = r;
+            ctx.beginPath();
+            ctx.arc(x, y, rad, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        requestAnimationFrame(drawBackground);
+    }
+    drawBackground();
+
+    let isRecording = false;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let recognition;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = true;
+        recognition.continuous = true;
+
+        recognition.onresult = (event) => {
+            let text = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                text += event.results[i][0].transcript;
+            }
+            if (text.trim()) {
+                subtitleDisplay.textContent = text;
+            }
+        };
+    }
+
+    document.getElementById('recBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('recBtn');
+        if (!isRecording) {
+            try {
+                const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                const canvasStream = canvas.captureStream(30);
+
+                const combinedStream = new MediaStream([
+                    ...canvasStream.getVideoTracks(),
+                    ...audioStream.getAudioTracks()
+                ]);
+
+                let options = { mimeType: 'video/webm' };
+                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+                    options = { mimeType: 'video/webm;codecs=vp9,opus' };
+                }
+
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(combinedStream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    // Автоматически запускаем скачивание файла на устройство
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'visionary-reel.webm';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                    }, 100);
+
+                    btn.textContent = '🎙️ Старт записи';
+                    btn.classList.remove('recording');
+                    statusText.textContent = '✅ Видео автоматически скачано в папку «Загрузки»!';
+                };
+
+                mediaRecorder.start(200);
+                if (recognition) recognition.start();
+
+                isRecording = true;
+                btn.textContent = '⏹️ Стоп (Сохранить)';
+                btn.classList.add('recording');
+                statusText.textContent = '🎙️ Идет запись... Говори текст!';
+
+            } catch (err) {
+                alert('Разреши доступ к микрофону!');
+                console.error(err);
+            }
+        } else {
+            isRecording = false;
+            if (recognition) recognition.stop();
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            statusText.textContent = '⚡ Скачивание файла...';
+        }
+    });
+</script>
+
+</body>
+</html>
